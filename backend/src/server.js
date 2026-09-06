@@ -337,18 +337,46 @@ app.post('/api/media/create-image', async (req, res) => {
   try {
     const { prompt, size = '1024x1024' } = req.body || {};
     if (!prompt) return fail(res, 'prompt is required', 400);
-    const zai = await getZAI();
-    const result = await zai.images.generations.create({ prompt, size });
-    const item = result?.data?.[0];
-    if (!item) return fail(res, 'no image returned from Z.AI');
-    const b64 = item.base64 || item.b64;
-    const dataUrl = b64 ? `data:image/png;base64,${b64}` : (item.url || '');
-    ok(res, {
-      dataUrl,
-      imageBase64: b64 || null,
+
+    // Parse size into width/height
+    const [w, h] = String(size).split('x').map(n => parseInt(n, 10) || 1024);
+
+    // Try Z.AI first
+    try {
+      const zai = await getZAI();
+      const result = await zai.images.generations.create({ prompt, size });
+      const item = result?.data?.[0];
+      if (item) {
+        const b64 = item.base64 || item.b64;
+        const dataUrl = b64 ? `data:image/png;base64,${b64}` : (item.url || '');
+        if (dataUrl) {
+          return ok(res, {
+            dataUrl,
+            imageBase64: b64 || null,
+            prompt,
+            size,
+            format: item.format || 'png',
+            source: 'zai'
+          });
+        }
+      }
+    } catch (zaiErr) {
+      console.warn('[create-image] Z.AI failed:', zaiErr.message, '— falling back to Pollinations');
+    }
+
+    // Fallback: Pollinations (free, no auth, public)
+    const pollinationsUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=${w}&height=${h}&nologo=true&seed=${Date.now() % 1000000}`;
+    const pollResp = await fetch(pollinationsUrl, { method: 'GET' });
+    if (!pollResp.ok) throw new Error(`Pollinations HTTP ${pollResp.status}`);
+    const buf = Buffer.from(await pollResp.arrayBuffer());
+    const b64 = buf.toString('base64');
+    return ok(res, {
+      dataUrl: `data:image/jpeg;base64,${b64}`,
+      imageBase64: b64,
       prompt,
       size,
-      format: item.format || 'png',
+      format: 'jpeg',
+      source: 'pollinations'
     });
   } catch (e) { fail(res, e); }
 });
@@ -519,18 +547,57 @@ app.post('/api/chat', async (req, res) => {
   try {
     const { message, system, history = [] } = req.body || {};
     if (!message) return fail(res, 'message is required', 400);
-    const zai = await getZAI();
+
+    // Build messages array
     const messages = [];
     if (system) messages.push({ role: 'system', content: system });
     for (const h of history) messages.push(h);
     messages.push({ role: 'user', content: message });
-    const completion = await zai.chat.completions.create({
-      model: 'glm-4-plus',
-      messages,
-      thinking: { type: 'disabled' },
+
+    // Try Z.AI SDK first
+    try {
+      const zai = await getZAI();
+      const completion = await zai.chat.completions.create({
+        model: 'glm-4-plus',
+        messages,
+        thinking: { type: 'disabled' },
+      });
+      const resp = completion?.choices?.[0]?.message?.content || '';
+      if (resp) return ok(res, { response: resp, source: 'zai-glm-4' });
+    } catch (zaiErr) {
+      console.warn('[chat] Z.AI failed:', zaiErr.message);
+    }
+
+    // Fallback: Pollinations text API (free, no auth)
+    try {
+      const pollResp = await fetch('https://text.pollinations.ai/openai', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'openai',
+          messages,
+          temperature: 0.7
+        })
+      });
+      if (pollResp.ok) {
+        const data = await pollResp.json();
+        const resp = data?.choices?.[0]?.message?.content || '';
+        if (resp) return ok(res, { response: resp, source: 'pollinations' });
+      }
+    } catch (pollErr) {
+      console.warn('[chat] Pollinations failed:', pollErr.message);
+    }
+
+    // Last resort: simple Pollinations GET text
+    const simpleResp = await fetch(`https://text.pollinations.ai/${encodeURIComponent(message)}`, {
+      method: 'GET'
     });
-    const resp = completion?.choices?.[0]?.message?.content || '';
-    ok(res, { response: resp });
+    if (simpleResp.ok) {
+      const text = await simpleResp.text();
+      if (text) return ok(res, { response: text, source: 'pollinations-simple' });
+    }
+
+    return fail(res, 'All AI providers failed', 503);
   } catch (e) { fail(res, e); }
 });
 
@@ -538,22 +605,57 @@ app.post('/api/vision', async (req, res) => {
   try {
     const { prompt, imageBase64, mime = 'image/jpeg' } = req.body || {};
     if (!imageBase64) return fail(res, 'imageBase64 is required', 400);
-    const zai = await getZAI();
-    const completion = await zai.chat.completions.createVision({
-      model: 'glm-4v',
-      messages: [
-        {
-          role: 'user',
-          content: [
-            { type: 'text', text: prompt || 'صف هذه الصورة بالتفصيل' },
-            { type: 'image_url', image_url: { url: `data:${mime};base64,${imageBase64}` } },
-          ],
-        },
-      ],
-      thinking: { type: 'disabled' },
-    });
-    const resp = completion?.choices?.[0]?.message?.content || '';
-    ok(res, { response: resp });
+
+    // Try Z.AI vision first
+    try {
+      const zai = await getZAI();
+      const completion = await zai.chat.completions.createVision({
+        model: 'glm-4v',
+        messages: [
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text: prompt || 'صف هذه الصورة بالتفصيل' },
+              { type: 'image_url', image_url: { url: `data:${mime};base64,${imageBase64}` } },
+            ],
+          },
+        ],
+        thinking: { type: 'disabled' },
+      });
+      const resp = completion?.choices?.[0]?.message?.content || '';
+      if (resp) return ok(res, { response: resp, source: 'zai-glm-4v' });
+    } catch (zaiErr) {
+      console.warn('[vision] Z.AI failed:', zaiErr.message);
+    }
+
+    // Fallback: Pollinations vision (uses openai-compatible endpoint with image)
+    try {
+      const pollResp = await fetch('https://text.pollinations.ai/openai', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'openai',
+          messages: [
+            {
+              role: 'user',
+              content: [
+                { type: 'text', text: prompt || 'صف هذه الصورة بالتفصيل' },
+                { type: 'image_url', image_url: { url: `data:${mime};base64,${imageBase64}` } }
+              ]
+            }
+          ]
+        })
+      });
+      if (pollResp.ok) {
+        const data = await pollResp.json();
+        const resp = data?.choices?.[0]?.message?.content || '';
+        if (resp) return ok(res, { response: resp, source: 'pollinations-vision' });
+      }
+    } catch (pollErr) {
+      console.warn('[vision] Pollinations failed:', pollErr.message);
+    }
+
+    return fail(res, 'خدمة تحليل الصور غير متاحة حالياً. حاول مرة أخرى لاحقاً.', 503);
   } catch (e) { fail(res, e); }
 });
 
@@ -561,11 +663,40 @@ app.post('/api/tts', async (req, res) => {
   try {
     const { text, voice = 'male' } = req.body || {};
     if (!text) return fail(res, 'text is required', 400);
-    const zai = await getZAI();
-    const r = await zai.audio.tts.create({ model: 'zai-tts', input: text, voice });
-    const buf = Buffer.from(await r.arrayBuffer());
-    const b64 = buf.toString('base64');
-    ok(res, { audioBase64: b64, format: 'mp3' });
+
+    // Try Z.AI TTS first
+    try {
+      const zai = await getZAI();
+      const r = await zai.audio.tts.create({ model: 'zai-tts', input: text, voice });
+      const buf = Buffer.from(await r.arrayBuffer());
+      const b64 = buf.toString('base64');
+      if (b64 && b64.length > 100) {
+        return ok(res, { audioBase64: b64, format: 'mp3', source: 'zai' });
+      }
+    } catch (zaiErr) {
+      console.warn('[tts] Z.AI failed:', zaiErr.message);
+    }
+
+    // Fallback: Pollinations audio (if available) or Google Translate TTS (public)
+    try {
+      // Google Translate TTS (public, no auth needed)
+      const gttsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(text)}&tl=ar&client=tw-ob`;
+      const gttsResp = await fetch(gttsUrl, {
+        method: 'GET',
+        headers: { 'User-Agent': 'Mozilla/5.0' }
+      });
+      if (gttsResp.ok) {
+        const buf = Buffer.from(await gttsResp.arrayBuffer());
+        const b64 = buf.toString('base64');
+        if (b64 && b64.length > 100) {
+          return ok(res, { audioBase64: b64, format: 'mp3', source: 'google-translate' });
+        }
+      }
+    } catch (gttsErr) {
+      console.warn('[tts] Google Translate failed:', gttsErr.message);
+    }
+
+    return fail(res, 'All TTS providers failed', 503);
   } catch (e) { fail(res, e); }
 });
 
@@ -584,17 +715,47 @@ app.post('/api/image', async (req, res) => {
   try {
     const { prompt, size = '1024x1024' } = req.body || {};
     if (!prompt) return fail(res, 'prompt is required', 400);
-    const zai = await getZAI();
-    const result = await zai.images.generations.create({ prompt, size });
-    const item = result?.data?.[0];
-    const b64 = item?.base64 || item?.b64;
-    const dataUrl = b64 ? `data:image/png;base64,${b64}` : (item?.url || '');
+
+    // Parse size
+    const [w, h] = String(size).split('x').map(n => parseInt(n, 10) || 1024);
+
+    // Try Z.AI first
+    let b64 = null;
+    let source = 'zai';
+    try {
+      const zai = await getZAI();
+      const result = await zai.images.generations.create({ prompt, size });
+      const item = result?.data?.[0];
+      b64 = item?.base64 || item?.b64;
+      if (!b64 && item?.url) {
+        // Download URL to base64
+        const r = await fetch(item.url);
+        const buf = Buffer.from(await r.arrayBuffer());
+        b64 = buf.toString('base64');
+      }
+    } catch (zaiErr) {
+      console.warn('[image] Z.AI failed:', zaiErr.message);
+      source = 'pollinations';
+    }
+
+    if (!b64) {
+      // Fallback: Pollinations
+      const pollinationsUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=${w}&height=${h}&nologo=true&seed=${Date.now() % 1000000}`;
+      const pollResp = await fetch(pollinationsUrl);
+      if (!pollResp.ok) throw new Error(`Pollinations HTTP ${pollResp.status}`);
+      const buf = Buffer.from(await pollResp.arrayBuffer());
+      b64 = buf.toString('base64');
+      source = 'pollinations';
+    }
+
+    const dataUrl = `data:image/${source === 'pollinations' ? 'jpeg' : 'png'};base64,${b64}`;
     ok(res, {
       dataUrl,
-      imageBase64: b64 || null,
+      imageBase64: b64,
       originalPrompt: prompt,
       prompt,
       size,
+      source
     });
   } catch (e) { fail(res, e); }
 });
