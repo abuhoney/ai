@@ -51,10 +51,11 @@ import java.util.List;
  */
 public class MainActivity extends Activity {
 
-    private static final String DEFAULT_BACKEND_URL = "https://bardompro-v3.onrender.com";
+    private static final String DEFAULT_BACKEND_URL = "https://bardom.onrender.com";
     private static final String USER_ID = "ef2ad49b-23e9-4c2d-8b13-6ff693f5dd90";
-    private static final String APP_VERSION = "3.0.1";
-    private static final String ASSET_BASE = "file:///android_asset/web/";
+    private static final String APP_VERSION = "3.1.0";
+    // Load web app from backend (enables live updates via GitHub without rebuilding APK)
+    private static final String WEB_APP_URL = DEFAULT_BACKEND_URL + "/web/index.html";
 
     private static final int REQ_PERMS = 1001;
     private static final int REQ_FILE_CHOOSER = 1002;
@@ -94,7 +95,14 @@ public class MainActivity extends Activity {
         s.setLoadWithOverviewMode(true);
         s.setUseWideViewPort(true);
 
-        webView.setWebViewClient(new WebViewClient());
+        webView.setWebViewClient(new WebViewClient() {
+            @Override
+            public boolean shouldOverrideUrlLoading(WebView view, String url) {
+                // Keep all URLs inside the WebView (don't open external browser)
+                view.loadUrl(url);
+                return true;
+            }
+        });
         webView.setWebChromeClient(new BardomChromeClient());
         webView.setDownloadListener(new BardomDownloadListener());
         webView.addJavascriptInterface(new BardomBridge(), "AndroidBridge");
@@ -104,8 +112,8 @@ public class MainActivity extends Activity {
         // Request runtime permissions before loading content
         requestRuntimePermissions();
 
-        // Boot directly from local assets — no network needed for the shell
-        webView.loadUrl(ASSET_BASE + "index.html");
+        // Boot from remote backend — enables live updates via GitHub
+        webView.loadUrl(WEB_APP_URL);
     }
 
     /**
