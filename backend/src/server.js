@@ -388,9 +388,81 @@ app.post('/api/media/create-video', async (req, res) => {
   try {
     const { prompt, model = 'cogvideox-2', duration = 5, size = '1024x1024' } = req.body || {};
     if (!prompt) return fail(res, 'prompt is required', 400);
-    const zai = await getZAI();
-    const result = await zai.video.generations.create({ prompt, model, duration, size });
-    ok(res, { task: result, prompt, model });
+
+    // 1) Try Z.AI SDK
+    try {
+      const zai = await getZAI();
+      const result = await zai.video.generations.create({ prompt, model, duration, size });
+      if (result && (result.id || result.task_id)) {
+        return ok(res, { task: result, prompt, model, source: 'zai' });
+      }
+    } catch (zaiErr) {
+      console.warn('[create-video] Z.AI SDK failed:', zaiErr.message);
+    }
+
+    // 2) Try Z.AI direct fetch
+    try {
+      const baseUrl = process.env.ZAI_BASE_URL || 'https://internal-api.z.ai/v1';
+      const apiKey = process.env.ZAI_API_KEY || 'Z.ai';
+      const chatId = process.env.ZAI_CHAT_ID || '';
+      const userId = process.env.ZAI_USER_ID || '';
+      const token = process.env.ZAI_TOKEN || '';
+
+      const response = await fetch(`${baseUrl}/video/generations`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`,
+          'X-Z-AI-From': 'Z',
+          'X-Chat-Id': chatId,
+          'X-User-Id': userId,
+          'X-Token': token
+        },
+        body: JSON.stringify({ prompt, model, duration, size }),
+        signal: AbortSignal.timeout(30000)
+      });
+      if (response.ok) {
+        const data = await response.json();
+        if (data && (data.id || data.task_id)) {
+          return ok(res, { task: data, prompt, model, source: 'zai-direct' });
+        }
+      }
+    } catch (zaiErr) {
+      console.warn('[create-video] Z.AI direct failed:', zaiErr.message);
+    }
+
+    // 3) Fallback: Pollinations video (text-to-video via image-to-video pipeline)
+    // Pollinations doesn't have direct text-to-video, so we:
+    //   a) Generate an image from the prompt
+    //   b) Return it as a "video poster" with a note
+    try {
+      const [w, h] = String(size).split('x').map(n => parseInt(n, 10) || 1024);
+      const imageUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=${w}&height=${h}&nologo=true&seed=${Date.now() % 1000000}`;
+      const pollResp = await fetch(imageUrl, { method: 'GET', signal: AbortSignal.timeout(60000) });
+      if (pollResp.ok) {
+        const buf = Buffer.from(await pollResp.arrayBuffer());
+        const b64 = buf.toString('base64');
+        return ok(res, {
+          task: {
+            id: 'fallback_' + Date.now(),
+            task_status: 'SUCCESS',
+            video_result: [],
+            fallback: true,
+            fallback_type: 'image_poster',
+            poster_dataUrl: `data:image/jpeg;base64,${b64}`,
+            poster_imageBase64: b64,
+            note: 'تم إنشاء صورة بدلاً من الفيديو لأن خدمة توليد الفيديو (Z.AI CogVideoX) غير متاحة من خادم Render. ستظهر هذه الصورة كـ "بوستر" للفيديو.'
+          },
+          prompt,
+          model,
+          source: 'pollinations-fallback'
+        });
+      }
+    } catch (pollErr) {
+      console.warn('[create-video] Pollinations fallback failed:', pollErr.message);
+    }
+
+    return fail(res, 'تعذّر توليد الفيديو. خدمة Z.AI CogVideoX غير متاحة حالياً من خادم Render، والمزود البديل فشل أيضاً. حاول مرة أخرى لاحقاً.', 503);
   } catch (e) { fail(res, e); }
 });
 
@@ -411,19 +483,35 @@ app.post('/api/media/animate-image', async (req, res) => {
   try {
     const { prompt, imageBase64, mime = 'image/png', size = '1024x1024' } = req.body || {};
     if (!imageBase64) return fail(res, 'imageBase64 is required', 400);
-    const zai = await getZAI();
-    // Use image-edit endpoint with animation-instructed prompt
-    const animationPrompt = `[ANIMATE] ${prompt || 'make this image come alive with subtle motion'}`;
-    const result = await zai.images.generations.edit({
-      prompt: animationPrompt,
-      image: imageBase64,
-      mime,
-      size,
+
+    // Try Z.AI first
+    try {
+      const zai = await getZAI();
+      const animationPrompt = `[ANIMATE] ${prompt || 'make this image come alive with subtle motion'}`;
+      const result = await zai.images.generations.edit({
+        prompt: animationPrompt,
+        image: imageBase64,
+        mime,
+        size,
+      });
+      const item = result?.data?.[0];
+      const b64 = item?.base64 || item?.b64;
+      const dataUrl = b64 ? `data:image/png;base64,${b64}` : (item?.url || '');
+      if (dataUrl) {
+        return ok(res, { dataUrl, imageBase64: b64 || null, prompt: animationPrompt, source: 'zai' });
+      }
+    } catch (zaiErr) {
+      console.warn('[animate-image] Z.AI failed:', zaiErr.message);
+    }
+
+    // Fallback: return the original image with a note (no animation possible without Z.AI)
+    return ok(res, {
+      dataUrl: `data:${mime};base64,${imageBase64}`,
+      imageBase64,
+      prompt,
+      source: 'original-returned',
+      note: 'لم يتم تحريك الصورة لأن خدمة Z.AI غير متاحة. تم إرجاع الصورة الأصلية.'
     });
-    const item = result?.data?.[0];
-    const b64 = item?.base64 || item?.b64;
-    const dataUrl = b64 ? `data:image/png;base64,${b64}` : (item?.url || '');
-    ok(res, { dataUrl, imageBase64: b64 || null, prompt: animationPrompt });
   } catch (e) { fail(res, e); }
 });
 
@@ -457,16 +545,23 @@ app.post('/api/media/edit-video', async (req, res) => {
     const { prompt, videoUrl, model = 'cogvideox-2' } = req.body || {};
     if (!prompt) return fail(res, 'prompt is required', 400);
     if (!videoUrl) return fail(res, 'videoUrl is required', 400);
-    const zai = await getZAI();
-    // Z.AI doesn't have direct video edit endpoint yet — use function.invoke
-    let result;
+
+    // Try Z.AI
     try {
-      result = await zai.functions.invoke('media.edit_video', { prompt, video_url: videoUrl, model });
-    } catch (fnErr) {
-      // Fallback: re-create with edit prompt
-      result = await zai.video.generations.create({ prompt: `${prompt} (source: ${videoUrl})`, model });
+      const zai = await getZAI();
+      let result;
+      try {
+        result = await zai.functions.invoke('media.edit_video', { prompt, video_url: videoUrl, model });
+      } catch (fnErr) {
+        result = await zai.video.generations.create({ prompt: `${prompt} (source: ${videoUrl})`, model });
+      }
+      if (result) return ok(res, { task: result, prompt, source: 'zai' });
+    } catch (zaiErr) {
+      console.warn('[edit-video] Z.AI failed:', zaiErr.message);
     }
-    ok(res, { task: result, prompt });
+
+    // Fallback: no video edit available without Z.AI
+    return fail(res, 'تعذّر تعديل الفيديو. خدمة Z.AI غير متاحة حالياً من خادم Render.', 503);
   } catch (e) { fail(res, e); }
 });
 
