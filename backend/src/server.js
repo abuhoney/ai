@@ -564,7 +564,8 @@ async function tryZaiDirect(messages) {
     body: JSON.stringify({
       messages,
       thinking: { type: 'disabled' }
-    })
+    }),
+    signal: AbortSignal.timeout(30000)
   });
   if (!response.ok) {
     const text = await response.text();
@@ -574,51 +575,70 @@ async function tryZaiDirect(messages) {
   return data?.choices?.[0]?.message?.content || '';
 }
 
-// Helper: try Pollinations with retries
+// Helper: try OpenRouter free models (supports Arabic, free tier)
+async function tryOpenRouter(messages) {
+  // Use env var - don't hardcode API keys in source
+  const apiKey = process.env.OPENROUTER_API_KEY;
+  if (!apiKey) {
+    console.warn('[openrouter] OPENROUTER_API_KEY env var not set');
+    return null;
+  }
+  // Use a free model that supports Arabic
+  const models = ['liquid/lfm-2.5-2.6b:free', 'nvidia/nemotron-3.5-lightning:free', 'thinkingmachines/inkling-small:free'];
+
+  for (const model of models) {
+    try {
+      const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`,
+          'HTTP-Referer': 'https://bardompro.com',
+          'X-Title': 'BardomPro AI'
+        },
+        body: JSON.stringify({
+          model,
+          messages,
+          temperature: 0.7,
+          max_tokens: 2000
+        }),
+        signal: AbortSignal.timeout(60000)
+      });
+      if (!response.ok) {
+        console.warn(`[openrouter] ${model} HTTP ${response.status}`);
+        continue;
+      }
+      const data = await response.json();
+      const content = data?.choices?.[0]?.message?.content || '';
+      if (content) return content;
+    } catch (e) {
+      console.warn(`[openrouter] ${model} failed:`, e.message);
+    }
+  }
+  return null;
+}
+
+// Helper: try Pollinations with retries (only works for short prompts due to rate limit)
 async function tryPollinations(message, system, history) {
   const messages = [];
   if (system) messages.push({ role: 'system', content: system });
   for (const h of history) messages.push(h);
   messages.push({ role: 'user', content: message });
 
-  // Attempt 1: simple GET (most reliable)
-  for (let i = 0; i < 3; i++) {
+  // Attempt: simple GET (works for short prompts only)
+  for (let i = 0; i < 2; i++) {
     try {
       const simpleUrl = `https://text.pollinations.ai/${encodeURIComponent(message)}?referrer=bardompro.com`;
-      const r = await fetch(simpleUrl, { method: 'GET', signal: AbortSignal.timeout(20000) });
+      const r = await fetch(simpleUrl, { method: 'GET', signal: AbortSignal.timeout(15000) });
       if (r.ok) {
         const text = await r.text();
-        // Check if response is JSON error
         if (text && !text.startsWith('{') && !text.startsWith('<!DOCTYPE')) {
           return text;
         }
       }
     } catch (e) { /* retry */ }
-    await new Promise(r => setTimeout(r, 1000));
+    await new Promise(r => setTimeout(r, 800));
   }
-
-  // Attempt 2: POST openai endpoint with referrer
-  try {
-    const r = await fetch('https://text.pollinations.ai/openai', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Origin': 'https://bardompro.com',
-        'Referer': 'https://bardompro.com'
-      },
-      body: JSON.stringify({
-        model: 'openai-fast',
-        messages,
-        temperature: 0.7
-      }),
-      signal: AbortSignal.timeout(30000)
-    });
-    if (r.ok) {
-      const data = await r.json();
-      const resp = data?.choices?.[0]?.message?.content || '';
-      if (resp) return resp;
-    }
-  } catch (e) { /* fall through */ }
 
   return null;
 }
@@ -647,7 +667,7 @@ app.post('/api/chat', async (req, res) => {
       console.warn('[chat] Z.AI SDK failed:', zaiErr.message);
     }
 
-    // 2) Try Z.AI direct fetch (bypass SDK)
+    // 2) Try Z.AI direct fetch
     try {
       const resp = await tryZaiDirect(messages);
       if (resp) return ok(res, { response: resp, source: 'zai-direct' });
@@ -655,7 +675,13 @@ app.post('/api/chat', async (req, res) => {
       console.warn('[chat] Z.AI direct failed:', zaiErr.message);
     }
 
-    // 3) Try Pollinations with retries
+    // 3) Try OpenRouter free models (works from anywhere, supports Arabic)
+    const orResp = await tryOpenRouter(messages);
+    if (orResp) {
+      return ok(res, { response: orResp, source: 'openrouter-free' });
+    }
+
+    // 4) Last resort: Pollinations (limited but sometimes works for short prompts)
     const pollResp = await tryPollinations(message, system, history);
     if (pollResp) {
       return ok(res, { response: pollResp, source: 'pollinations' });
