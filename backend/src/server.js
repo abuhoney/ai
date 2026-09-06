@@ -543,18 +543,97 @@ app.post('/api/maisa/support', async (req, res) => {
 // ============================================================
 // Existing endpoints (kept for backward compat)
 // ============================================================
+// Helper: try Z.AI direct fetch (bypasses SDK config issues)
+async function tryZaiDirect(messages) {
+  const baseUrl = process.env.ZAI_BASE_URL || 'https://internal-api.z.ai/v1';
+  const apiKey = process.env.ZAI_API_KEY || 'Z.ai';
+  const chatId = process.env.ZAI_CHAT_ID || '';
+  const userId = process.env.ZAI_USER_ID || '';
+  const token = process.env.ZAI_TOKEN || '';
+
+  const response = await fetch(`${baseUrl}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`,
+      'X-Z-AI-From': 'Z',
+      'X-Chat-Id': chatId,
+      'X-User-Id': userId,
+      'X-Token': token
+    },
+    body: JSON.stringify({
+      messages,
+      thinking: { type: 'disabled' }
+    })
+  });
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Z.AI HTTP ${response.status}: ${text.substring(0, 200)}`);
+  }
+  const data = await response.json();
+  return data?.choices?.[0]?.message?.content || '';
+}
+
+// Helper: try Pollinations with retries
+async function tryPollinations(message, system, history) {
+  const messages = [];
+  if (system) messages.push({ role: 'system', content: system });
+  for (const h of history) messages.push(h);
+  messages.push({ role: 'user', content: message });
+
+  // Attempt 1: simple GET (most reliable)
+  for (let i = 0; i < 3; i++) {
+    try {
+      const simpleUrl = `https://text.pollinations.ai/${encodeURIComponent(message)}?referrer=bardompro.com`;
+      const r = await fetch(simpleUrl, { method: 'GET', signal: AbortSignal.timeout(20000) });
+      if (r.ok) {
+        const text = await r.text();
+        // Check if response is JSON error
+        if (text && !text.startsWith('{') && !text.startsWith('<!DOCTYPE')) {
+          return text;
+        }
+      }
+    } catch (e) { /* retry */ }
+    await new Promise(r => setTimeout(r, 1000));
+  }
+
+  // Attempt 2: POST openai endpoint with referrer
+  try {
+    const r = await fetch('https://text.pollinations.ai/openai', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Origin': 'https://bardompro.com',
+        'Referer': 'https://bardompro.com'
+      },
+      body: JSON.stringify({
+        model: 'openai-fast',
+        messages,
+        temperature: 0.7
+      }),
+      signal: AbortSignal.timeout(30000)
+    });
+    if (r.ok) {
+      const data = await r.json();
+      const resp = data?.choices?.[0]?.message?.content || '';
+      if (resp) return resp;
+    }
+  } catch (e) { /* fall through */ }
+
+  return null;
+}
+
 app.post('/api/chat', async (req, res) => {
   try {
     const { message, system, history = [] } = req.body || {};
     if (!message) return fail(res, 'message is required', 400);
 
-    // Build messages array
     const messages = [];
     if (system) messages.push({ role: 'system', content: system });
     for (const h of history) messages.push(h);
     messages.push({ role: 'user', content: message });
 
-    // Try Z.AI SDK first
+    // 1) Try Z.AI SDK
     try {
       const zai = await getZAI();
       const completion = await zai.chat.completions.create({
@@ -565,39 +644,24 @@ app.post('/api/chat', async (req, res) => {
       const resp = completion?.choices?.[0]?.message?.content || '';
       if (resp) return ok(res, { response: resp, source: 'zai-glm-4' });
     } catch (zaiErr) {
-      console.warn('[chat] Z.AI failed:', zaiErr.message);
+      console.warn('[chat] Z.AI SDK failed:', zaiErr.message);
     }
 
-    // Fallback: Pollinations text API (free, no auth)
+    // 2) Try Z.AI direct fetch (bypass SDK)
     try {
-      const pollResp = await fetch('https://text.pollinations.ai/openai', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: 'openai',
-          messages,
-          temperature: 0.7
-        })
-      });
-      if (pollResp.ok) {
-        const data = await pollResp.json();
-        const resp = data?.choices?.[0]?.message?.content || '';
-        if (resp) return ok(res, { response: resp, source: 'pollinations' });
-      }
-    } catch (pollErr) {
-      console.warn('[chat] Pollinations failed:', pollErr.message);
+      const resp = await tryZaiDirect(messages);
+      if (resp) return ok(res, { response: resp, source: 'zai-direct' });
+    } catch (zaiErr) {
+      console.warn('[chat] Z.AI direct failed:', zaiErr.message);
     }
 
-    // Last resort: simple Pollinations GET text
-    const simpleResp = await fetch(`https://text.pollinations.ai/${encodeURIComponent(message)}`, {
-      method: 'GET'
-    });
-    if (simpleResp.ok) {
-      const text = await simpleResp.text();
-      if (text) return ok(res, { response: text, source: 'pollinations-simple' });
+    // 3) Try Pollinations with retries
+    const pollResp = await tryPollinations(message, system, history);
+    if (pollResp) {
+      return ok(res, { response: pollResp, source: 'pollinations' });
     }
 
-    return fail(res, 'All AI providers failed', 503);
+    return fail(res, 'تعذّر الحصول على رد. حاول مرة أخرى بعد قليل.', 503);
   } catch (e) { fail(res, e); }
 });
 
