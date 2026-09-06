@@ -965,3 +965,56 @@ app.get('/api/debug', async (req, res) => {
   
   res.json({ ok: true, debug: results, time: new Date().toISOString() });
 });
+
+app.get('/api/debug/arabic', async (req, res) => {
+  const prompt = "اكتب قصة";
+  const encoded = encodeURIComponent(prompt);
+  
+  // Test 1: simple GET
+  let simpleResult = null;
+  try {
+    const r = await fetch(`https://text.pollinations.ai/${encoded}?referrer=bardompro.com`, {
+      signal: AbortSignal.timeout(20000)
+    });
+    const text = await r.text();
+    simpleResult = {
+      url: `https://text.pollinations.ai/${encoded}?referrer=bardompro.com`,
+      status: r.status,
+      contentType: r.headers.get('content-type'),
+      bodyPreview: text.substring(0, 500),
+      bodyLength: text.length
+    };
+  } catch (e) {
+    simpleResult = { error: e.message };
+  }
+  
+  // Test 2: POST openai
+  let postResult = null;
+  try {
+    const r = await fetch('https://text.pollinations.ai/openai', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Origin': 'https://bardompro.com',
+        'Referer': 'https://bardompro.com'
+      },
+      body: JSON.stringify({
+        model: 'openai-fast',
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0.7
+      }),
+      signal: AbortSignal.timeout(30000)
+    });
+    const text = await r.text();
+    postResult = {
+      status: r.status,
+      contentType: r.headers.get('content-type'),
+      bodyPreview: text.substring(0, 500),
+      bodyLength: text.length
+    };
+  } catch (e) {
+    postResult = { error: e.message };
+  }
+  
+  res.json({ ok: true, prompt, encoded, simpleResult, postResult });
+});
