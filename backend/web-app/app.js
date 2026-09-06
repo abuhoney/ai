@@ -40,7 +40,7 @@ const SERVER_ONLY_CAPS = new Set([
 const TREE = {
   intelligence: [
     { id: 'chat', label: 'محادثة' },
-    { id: 'vision', label: 'رؤية' },
+    { id: 'vision', label: 'تحليل الصور' },
     { id: 'p13n', label: 'سياق المستخدم' },
     { id: 'maisa', label: 'الدعم الفني', optional: true },
   ],
