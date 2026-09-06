@@ -408,7 +408,7 @@ app.post('/api/media/create-video', async (req, res) => {
       const userId = process.env.ZAI_USER_ID || '';
       const token = process.env.ZAI_TOKEN || '';
 
-      const response = await fetch(`${baseUrl}/video/generations`, {
+      const response = await fetch(`${baseUrl}/video/generation`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -470,9 +470,49 @@ app.get('/api/media/create-video/result', async (req, res) => {
   try {
     const id = req.query.id;
     if (!id) return fail(res, 'id is required', 400);
-    const zai = await getZAI();
-    const result = await zai.async.result.query(String(id));
-    ok(res, { task: result });
+
+    // If it's a fallback task ID, return success (already completed)
+    if (String(id).startsWith('fallback_')) {
+      return ok(res, { task: { task_status: 'SUCCESS', fallback: true, note: 'This was a fallback image task (already complete)' } });
+    }
+
+    // Try Z.AI SDK
+    try {
+      const zai = await getZAI();
+      const result = await zai.async.result.query(String(id));
+      if (result) return ok(res, { task: result, source: 'zai' });
+    } catch (zaiErr) {
+      console.warn('[video-result] Z.AI SDK failed:', zaiErr.message);
+    }
+
+    // Try Z.AI direct fetch
+    try {
+      const baseUrl = process.env.ZAI_BASE_URL || 'https://internal-api.z.ai/v1';
+      const apiKey = process.env.ZAI_API_KEY || 'Z.ai';
+      const chatId = process.env.ZAI_CHAT_ID || '';
+      const userId = process.env.ZAI_USER_ID || '';
+      const token = process.env.ZAI_TOKEN || '';
+
+      const response = await fetch(`${baseUrl}/async-result/${id}`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'X-Z-AI-From': 'Z',
+          'X-Chat-Id': chatId,
+          'X-User-Id': userId,
+          'X-Token': token
+        },
+        signal: AbortSignal.timeout(15000)
+      });
+      if (response.ok) {
+        const data = await response.json();
+        if (data) return ok(res, { task: data, source: 'zai-direct' });
+      }
+    } catch (zaiErr) {
+      console.warn('[video-result] Z.AI direct failed:', zaiErr.message);
+    }
+
+    return fail(res, 'تعذّر الاستعلام عن حالة الفيديو. خدمة Z.AI غير متاحة.', 503);
   } catch (e) { fail(res, e); }
 });
 
@@ -602,9 +642,32 @@ app.post('/api/media/get-reference-image', async (req, res) => {
   try {
     const { query, topK = 4 } = req.body || {};
     if (!query) return fail(res, 'query is required', 400);
-    const zai = await getZAI();
-    const result = await zai.images.search.create({ query, top_k: topK });
-    ok(res, { results: result?.data || result?.items || [], query });
+
+    // Try Z.AI first
+    try {
+      const zai = await getZAI();
+      const result = await zai.images.search.create({ query, top_k: topK });
+      const items = result?.data || result?.items || [];
+      if (items.length > 0) {
+        return ok(res, { results: items, query, source: 'zai' });
+      }
+    } catch (zaiErr) {
+      console.warn('[get-reference-image] Z.AI failed:', zaiErr.message);
+    }
+
+    // Fallback: Pollinations image search (just generate multiple images with different seeds)
+    try {
+      const results = [];
+      for (let i = 0; i < Math.min(topK, 4); i++) {
+        const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(query)}?width=512&height=512&nologo=true&seed=${Date.now() + i * 1000}`;
+        results.push({ url, prompt: query, index: i });
+      }
+      return ok(res, { results, query, source: 'pollinations' });
+    } catch (pollErr) {
+      console.warn('[get-reference-image] Pollinations failed:', pollErr.message);
+    }
+
+    return fail(res, 'تعذّر البحث عن صور مرجعية.', 503);
   } catch (e) { fail(res, e); }
 });
 
