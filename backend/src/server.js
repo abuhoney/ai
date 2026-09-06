@@ -383,13 +383,36 @@ app.post('/api/media/create-image', async (req, res) => {
 
 // ============================================================
 // 8) media.create_video — video generation (async + polling)
+// Uses Fly.io relay (HK region) that can reach internal-api.z.ai
 // ============================================================
 app.post('/api/media/create-video', async (req, res) => {
   try {
     const { prompt, model = 'cogvideox-2', duration = 5, size = '1024x1024' } = req.body || {};
     if (!prompt) return fail(res, 'prompt is required', 400);
 
-    // 1) Try Z.AI SDK
+    // 1) Try Fly.io relay (HK region — can reach internal-api.z.ai)
+    const relayUrl = process.env.RELAY_URL || '';
+    if (relayUrl) {
+      try {
+        const response = await fetch(`${relayUrl}/video/generation`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ prompt, model, duration, size }),
+          signal: AbortSignal.timeout(30000)
+        });
+        if (response.ok) {
+          const data = await response.json();
+          if (data && (data.id || data.task_id)) {
+            return ok(res, { task: data, prompt, model, source: 'relay-fly' });
+          }
+        }
+        console.warn('[create-video] relay HTTP', response.status);
+      } catch (relayErr) {
+        console.warn('[create-video] relay failed:', relayErr.message);
+      }
+    }
+
+    // 2) Try Z.AI SDK (may work if Render network permits)
     try {
       const zai = await getZAI();
       const result = await zai.video.generations.create({ prompt, model, duration, size });
@@ -400,7 +423,7 @@ app.post('/api/media/create-video', async (req, res) => {
       console.warn('[create-video] Z.AI SDK failed:', zaiErr.message);
     }
 
-    // 2) Try Z.AI direct fetch
+    // 3) Try Z.AI direct fetch (will fail from Render but try)
     try {
       const baseUrl = process.env.ZAI_BASE_URL || 'https://internal-api.z.ai/v1';
       const apiKey = process.env.ZAI_API_KEY || 'Z.ai';
@@ -431,10 +454,7 @@ app.post('/api/media/create-video', async (req, res) => {
       console.warn('[create-video] Z.AI direct failed:', zaiErr.message);
     }
 
-    // 3) Fallback: Pollinations video (text-to-video via image-to-video pipeline)
-    // Pollinations doesn't have direct text-to-video, so we:
-    //   a) Generate an image from the prompt
-    //   b) Return it as a "video poster" with a note
+    // 4) Last resort: Pollinations image as video poster
     try {
       const [w, h] = String(size).split('x').map(n => parseInt(n, 10) || 1024);
       const imageUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=${w}&height=${h}&nologo=true&seed=${Date.now() % 1000000}`;
@@ -451,7 +471,7 @@ app.post('/api/media/create-video', async (req, res) => {
             fallback_type: 'image_poster',
             poster_dataUrl: `data:image/jpeg;base64,${b64}`,
             poster_imageBase64: b64,
-            note: 'تم إنشاء صورة بدلاً من الفيديو لأن خدمة توليد الفيديو (Z.AI CogVideoX) غير متاحة من خادم Render. ستظهر هذه الصورة كـ "بوستر" للفيديو.'
+            note: 'تم إنشاء صورة بدلاً من الفيديو لأن relay على Fly.io غير مُعد بعد. راجع README.md في مجلد relay/ لإعداده.'
           },
           prompt,
           model,
@@ -476,7 +496,24 @@ app.get('/api/media/create-video/result', async (req, res) => {
       return ok(res, { task: { task_status: 'SUCCESS', fallback: true, note: 'This was a fallback image task (already complete)' } });
     }
 
-    // Try Z.AI SDK
+    // 1) Try Fly.io relay
+    const relayUrl = process.env.RELAY_URL || '';
+    if (relayUrl) {
+      try {
+        const response = await fetch(`${relayUrl}/async-result/${id}`, {
+          method: 'GET',
+          signal: AbortSignal.timeout(15000)
+        });
+        if (response.ok) {
+          const data = await response.json();
+          if (data) return ok(res, { task: data, source: 'relay-fly' });
+        }
+      } catch (relayErr) {
+        console.warn('[video-result] relay failed:', relayErr.message);
+      }
+    }
+
+    // 2) Try Z.AI SDK
     try {
       const zai = await getZAI();
       const result = await zai.async.result.query(String(id));
@@ -485,7 +522,7 @@ app.get('/api/media/create-video/result', async (req, res) => {
       console.warn('[video-result] Z.AI SDK failed:', zaiErr.message);
     }
 
-    // Try Z.AI direct fetch
+    // 3) Try Z.AI direct fetch
     try {
       const baseUrl = process.env.ZAI_BASE_URL || 'https://internal-api.z.ai/v1';
       const apiKey = process.env.ZAI_API_KEY || 'Z.ai';
@@ -493,7 +530,7 @@ app.get('/api/media/create-video/result', async (req, res) => {
       const userId = process.env.ZAI_USER_ID || '';
       const token = process.env.ZAI_TOKEN || '';
 
-      const response = await fetch(`${baseUrl}/async-result/${id}`, {
+      const response = await fetch(`${baseUrl}/async-result?id=${encodeURIComponent(id)}`, {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${apiKey}`,
