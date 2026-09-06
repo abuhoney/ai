@@ -903,11 +903,42 @@ app.delete('/api/gallery/:id', (req, res) => {
 // ============================================================
 // Start
 // ============================================================
+// Serve web-app frontend (enables live updates via GitHub)
+// The web-app files are copied into backend/web-app/ at deploy time
+const WEB_APP_DIR = path.join(__dirname, '..', 'web-app');
+app.use('/web', (req, res, next) => {
+  // Don't cache - always serve latest from GitHub
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  next();
+}, express.static(WEB_APP_DIR, {
+  index: 'index.html',
+  setHeaders: (res, filePath) => {
+    if (filePath.endsWith('.js')) res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+    if (filePath.endsWith('.css')) res.setHeader('Content-Type', 'text/css; charset=utf-8');
+    if (filePath.endsWith('.json')) res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    if (filePath.endsWith('.html')) res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  }
+}));
+
+// Root: serve the web app
+app.get('/', (req, res) => {
+  const indexPath = path.join(WEB_APP_DIR, 'index.html');
+  if (existsSync(indexPath)) {
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.sendFile(indexPath);
+  } else {
+    res.json({ ok: true, service: 'bardompro-backend', version: '3.0.0', note: 'Web app not deployed. Visit /api/capabilities' });
+  }
+});
+
 writeZaiConfig().then(() => {
   app.listen(PORT, () => {
     console.log(`BardomPro backend v3.0.0 listening on :${PORT}`);
     console.log(`  Z.AI: https://internal-api.z.ai/v1`);
     console.log(`  Capabilities: ${CAPABILITIES.length}`);
+    console.log(`  Web app served from: ${WEB_APP_DIR}`);
   });
 }).catch(e => {
   console.error('Failed to init Z.AI config:', e);
