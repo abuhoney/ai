@@ -1,0 +1,26 @@
+{
+  "backendUrl": "https://bardompro-v3.onrender.com",
+  "fallbackBackends": [
+    "https://bardom.onrender.com",
+    "http://localhost:3000",
+    "http://10.0.2.2:3000"
+  ],
+  "userId": "ef2ad49b-23e9-4c2d-8b13-6ff693f5dd90",
+  "chatId": "d5a5dfcd-27e7-4d4a-b56f-13313900eae7",
+  "version": "3.0.0",
+  "imageSizes": [
+    { "label": "مربع 1024×1024", "value": "1024x1024" },
+    { "label": "عمودي 768×1344", "value": "768x1344" },
+    { "label": "عمودي 864×1152", "value": "864x1152" },
+    { "label": "أفقي 1344×768", "value": "1344x768" },
+    { "label": "أفقي 1152×864", "value": "1152x864" },
+    { "label": "عريض 1440×720", "value": "1440x720" },
+    { "label": "طويل 720×1440", "value": "720x1440" }
+  ],
+  "defaultImageSize": "1024x1024",
+  "app": {
+    "name": "BardomPro AI",
+    "version": "3.0.0",
+    "tagline": "14 قدرة ذكاء اصطناعي — يعمل مباشرة بدون إعدادات"
+  }
+}

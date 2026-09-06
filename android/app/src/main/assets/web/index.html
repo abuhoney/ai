@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, viewport-fit=cover">
+  <meta name="theme-color" content="#070b18">
+  <meta name="description" content="BardomPro AI v3.0 — 14 قدرة ذكاء اصطناعي متكامل">
+  <title>BardomPro AI v3</title>
+  <link rel="preconnect" href="https://bardom.onrender.com">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Arabic:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- Animated aurora background -->
+  <div class="aurora" aria-hidden="true">
+    <div class="aurora-blob a"></div>
+    <div class="aurora-blob b"></div>
+    <div class="aurora-blob c"></div>
+  </div>
+
+  <div class="app-shell">
+    <!-- ============== HEADER ============== -->
+    <header class="top-bar">
+      <div class="brand">
+        <div class="brand-logo" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" width="22" height="22">
+            <path d="M4 4h7v7H4V4zm9 0h7v7h-7V4zM4 13h7v7H4v-7zm9 0h7v7h-7v-7z" fill="currentColor"/>
+          </svg>
+        </div>
+        <div class="brand-text">
+          <div class="brand-name">BardomPro <span>AI</span></div>
+          <div class="brand-tag" id="brandTag">v3.0 — 14 قدرة ذكاء اصطناعي</div>
+        </div>
+      </div>
+      <div class="top-actions">
+        <div class="conn-pill" id="connPill" title="حالة الاتصال" tabindex="0">
+          <span class="conn-dot"></span>
+          <span class="conn-text" id="backendStatus">جارٍ الفحص...</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- ============== CATEGORY TABS ============== -->
+    <nav class="cat-tabs" role="tablist" aria-label="فئات القدرات">
+      <button class="cat-btn active" data-cat="intelligence" role="tab" aria-selected="true">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-4 12.7c.5.4 1 .9 1 1.3v0M12 2a7 7 0 0 1 4 12.7c-.5.4-1 .9-1 1.3v0"/></svg>
+        <span>الذكاء</span>
+        <span class="cat-count" id="cnt-intelligence">3</span>
+      </button>
+      <button class="cat-btn" data-cat="media" role="tab" aria-selected="false">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>
+        <span>الوسائط</span>
+        <span class="cat-count" id="cnt-media">8</span>
+      </button>
+      <button class="cat-btn" data-cat="tools" role="tab" aria-selected="false">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a4 4 0 0 1-5.4 5.4l-5 5L2 19l3-1.3 5-5a4 4 0 0 1 5.4-5.4l-2.4 2.4-1.6-1.6z"/></svg>
+        <span>الأدوات</span>
+        <span class="cat-count" id="cnt-tools">5</span>
+      </button>
+    </nav>
+
+    <!-- ============== SUBTABS PER CATEGORY ============== -->
+    <nav class="sub-tabs" id="subTabs" role="tablist" aria-label="القدرات">
+      <!-- populated by JS -->
+    </nav>
+
+    <!-- ============== PANELS ============== -->
+    <main class="panels" id="panels">
+
+      <!-- ===================== INTELLIGENCE ===================== -->
+      <!-- Chat -->
+      <section class="panel" data-panel="chat">
+        <div class="messages" id="chatMessages">
+          <div class="msg assistant">
+            <div class="msg-avatar"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a7 7 0 0 0-4 12.7V18h8v-3.3A7 7 0 0 0 12 2z"/><path d="M9 18h6M10 22h4"/></svg></div>
+            <div class="msg-body">مرحباً! أنا <b>BardomPro AI v3</b> — مساعد ذكي متكامل. لديّ 14 قدرة موزّعة على الذكاء والوسائط والأدوات. كيف أساعدك؟</div>
+          </div>
+        </div>
+        <form class="composer" id="chatForm">
+          <textarea id="chatInput" placeholder="اكتب رسالتك بالعربية..." rows="1"></textarea>
+          <button type="submit" id="chatSend" class="send-btn">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
+          </button>
+        </form>
+      </section>
+
+      <!-- Vision -->
+      <section class="panel" data-panel="vision">
+        <div class="scroll-area">
+          <div class="dropzone" id="visionDropzone">
+            <input type="file" id="visionFile" accept="image/*" hidden>
+            <div class="dz-inner">
+              <div class="dz-icon">
+                <svg viewBox="0 0 24 24" width="36" height="36" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+              </div>
+              <div class="dz-text">اضغط أو اسحب صورة للتحليل</div>
+              <div class="dz-sub">يتم التحليل عبر نموذج رؤية متقدّم</div>
+            </div>
+          </div>
+          <img id="visionPreview" class="vision-preview" hidden alt="معاينة">
+          <div class="input-row">
+            <input type="text" id="visionPrompt" placeholder="سؤال محدد عن الصورة (افتراضي: صفها بالتفصيل)">
+            <button id="visionAnalyze" class="primary-btn">حلل</button>
+          </div>
+          <div class="result-card" id="visionResult">سيظهر التحليل هنا...</div>
+        </div>
+      </section>
+
+      <!-- p13n (User Context) -->
+      <section class="panel" data-panel="p13n">
+        <div class="scroll-area">
+          <div class="page-head">
+            <h2>سياق المستخدم (p13n)</h2>
+            <p class="muted">احفظ تفضيلاتك واطلب سياقك المخصص — يُستخدم لتخصيص الردود لاحقاً.</p>
+          </div>
+          <div class="grid-2">
+            <label class="field">
+              <span>اللغة المفضلة</span>
+              <select id="p13nLang">
+                <option value="ar">العربية</option>
+                <option value="en">English</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>السمة</span>
+              <select id="p13nTheme">
+                <option value="dark">داكن</option>
+                <option value="light">فاتح</option>
+              </select>
+            </label>
+          </div>
+          <label class="field">
+            <span>اهتمام جديد</span>
+            <input type="text" id="p13nInterest" placeholder="مثال: البرمجة، الفن، الأخبار...">
+          </label>
+          <button id="p13nSave" class="primary-btn full">حفظ التفضيلات</button>
+          <div class="result-card" id="p13nResult">سياقك الحالي يظهر هنا بعد الحفظ.</div>
+        </div>
+      </section>
+
+      <!-- Technical Support (optional) -->
+      <section class="panel" data-panel="maisa">
+        <div class="scroll-area">
+          <div class="page-head">
+            <h2>الدعم الفني (اختياري)</h2>
+            <p class="muted">وكيل دعم فني مع سياق إضافي وردود ذكية.</p>
+          </div>
+          <textarea id="maisaQuery" rows="4" placeholder="صف مشكلتك أو استفسارك الفني..."></textarea>
+          <textarea id="maisaContext" rows="3" placeholder="سياق إضافي (JSON أو نص حر) — اختياري"></textarea>
+          <button id="maisaSend" class="primary-btn full">أرسل الاستفسار</button>
+          <div class="result-card" id="maisaResult">سيظهر الرد هنا...</div>
+        </div>
+      </section>
+
+      <!-- ===================== MEDIA ===================== -->
+      <!-- Create Image -->
+      <section class="panel" data-panel="create-image">
+        <div class="scroll-area">
+          <div class="page-head">
+            <h2>توليد الصور</h2>
+            <p class="muted">صف الصورة بالعربية أو الإنجليزية — يتم التوليد عبر محرّك ذكاء اصطناعي.</p>
+          </div>
+          <form id="imageForm" class="v-stack">
+            <textarea id="imagePrompt" rows="3" placeholder="مثال: قطة بيضاء على نافذة، ضوء صباحي ناعم، تصوير فوتوغرافي"></textarea>
+            <div class="input-row">
+              <select id="imageSize"></select>
+              <button type="submit" id="imageGen" class="primary-btn">🎨 توليد</button>
+            </div>
+          </form>
+          <div class="image-grid" id="imageGrid"></div>
+        </div>
+      </section>
+
+      <!-- Create Video -->
+      <section class="panel" data-panel="create-video">
+        <div class="scroll-area">
+          <div class="page-head">
+            <h2>توليد الفيديو</h2>
+            <p class="muted">وصف نصي → فيديو قصير (غير متزامن، يحتاج اقتراع للنتيجة).</p>
+          </div>
+          <textarea id="videoPrompt" rows="3" placeholder="مثال: أمواج البحر عند الغروب، تصوير بطيء"></textarea>
+          <div class="input-row">
+            <select id="videoModel">
+              <option value="cogvideox-2">CogVideoX-2</option>
+              <option value="cogvideox">CogVideoX</option>
+            </select>
+            <input type="number" id="videoDuration" min="3" max="10" value="5" placeholder="المدة">
+            <button id="videoGen" class="primary-btn">🎬 أنشئ</button>
+          </div>
+          <div class="result-card" id="videoResult">مهمة الفيديو ستظهر هنا...</div>
+          <button id="videoPoll" class="ghost-btn" hidden>↻ تحقّق من النتيجة</button>
+          <div class="video-area" id="videoArea" hidden></div>
+        </div>
+      </section>
+
+      <!-- Animate Image -->
+      <section class="panel" data-panel="animate-image">
+        <div class="scroll-area">
+          <div class="page-head">
+            <h2>تحريك صورة</h2>
+            <p class="muted">ارفع صورة وصف كيف تريد تحريكها — يعاد توليدها مع الحركة.</p>
+          </div>
+          <div class="dropzone" id="animDropzone">
+            <input type="file" id="animFile" accept="image/*" hidden>
+            <div class="dz-inner">
+              <div class="dz-icon">
+                <svg viewBox="0 0 24 24" width="36" height="36" fill="none" stroke="currentColor" stroke-width="1.5"><path d="m22 8-6 4 6 4V8Z"/><rect x="2" y="6" width="14" height="12" rx="2"/></svg>
+              </div>
+              <div class="dz-text">ارفع صورة لتحريكها</div>
+            </div>
+          </div>
+          <img id="animPreview" class="vision-preview" hidden alt="معاينة">
+          <textarea id="animPrompt" rows="2" placeholder="صف الحركة المطلوبة (مثال: غيوم تتحرك ببطء، رياح في الأشجار)"></textarea>
+          <button id="animGen" class="primary-btn full">أنشئ الحركة</button>
+          <div class="image-grid" id="animGrid"></div>
+        </div>
+      </section>
+
+      <!-- Edit Image -->
+      <section class="panel" data-panel="edit-image">
+        <div class="scroll-area">
+          <div class="page-head">
+            <h2>تعديل صورة</h2>
+            <p class="muted">ارفع صورة + وصف التعديل المطلوب (img2img).</p>
+          </div>
+          <div class="dropzone" id="editDropzone">
+            <input type="file" id="editFile" accept="image/*" hidden>
+            <div class="dz-inner">
+              <div class="dz-icon">
+                <svg viewBox="0 0 24 24" width="36" height="36" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+              </div>
+              <div class="dz-text">ارفع صورة لتعديلها</div>
+            </div>
+          </div>
+          <img id="editPreview" class="vision-preview" hidden alt="معاينة">
+          <textarea id="editPrompt" rows="2" placeholder="مثال: اجعل السماء بنفسجية، أضف ضباباً ناعماً"></textarea>
+          <button id="editGen" class="primary-btn full">طبّق التعديل</button>
+          <div class="image-grid" id="editGrid"></div>
+        </div>
+      </section>
+
+      <!-- Edit Video -->
+      <section class="panel" data-panel="edit-video">
+        <div class="scroll-area">
+          <div class="page-head">
+            <h2>تعديل فيديو</h2>
+            <p class="muted">أدخل رابط فيديو ووصف التعديل المطلوب.</p>
+          </div>
+          <input type="url" id="editVideoUrl" placeholder="https://... (رابط الفيديو)">
+          <textarea id="editVideoPrompt" rows="2" placeholder="مثال: أضف نصاً ترجمة، قصّ أول ثانيتين"></textarea>
+          <button id="editVideoGen" class="primary-btn full">طبّق</button>
+          <div class="result-card" id="editVideoResult">النتيجة ستظهر هنا...</div>
+        </div>
+      </section>
+
+      <!-- Get Audio (optional) -->
+      <section class="panel" data-panel="get-audio">
+        <div class="scroll-area">
+          <div class="page-head">
+            <h2>استخراج الصوت (اختياري)</h2>
+            <p class="muted">من فيديو/نص → ملف صوتي. يدعم التحويل النصي للصوت كخيار احتياطي.</p>
+          </div>
+          <select id="audioSourceType">
+            <option value="video">من فيديو (URL)</option>
+            <option value="text">من نص (TTS)</option>
+          </select>
+          <textarea id="audioSource" rows="3" placeholder="رابط الفيديو أو النص..."></textarea>
+          <button id="audioGen" class="primary-btn full">استخرج الصوت</button>
+          <div class="result-card" id="audioResult">الصوت سيظهر هنا...</div>
+          <audio id="audioPlayer" controls hidden></audio>
+        </div>
+      </section>
+
+      <!-- Get Reference Image -->
+      <section class="panel" data-panel="get-reference-image">
+        <div class="scroll-area">
+          <div class="page-head">
+            <h2>البحث عن صورة مرجعية</h2>
+            <p class="muted">يجلب صور حقيقية كمراجع عبر محرّك بحث الصور.</p>
+          </div>
+          <div class="input-row">
+            <input type="text" id="refQuery" placeholder="مثال: جبال الألب شتاءً">
+            <button id="refSearch" class="primary-btn">ابحث</button>
+          </div>
+          <div class="ref-grid" id="refGrid"></div>
+        </div>
+      </section>
+
+      <!-- Gallery -->
+      <section class="panel" data-panel="gallery">
+        <div class="scroll-area">
+          <div class="gallery-header">
+            <h2>🖼 المعرض العام</h2>
+            <button id="galleryRefresh" class="ghost-btn">↻ تحديث</button>
+          </div>
+          <div class="gallery-grid" id="galleryGrid">
+            <div class="gallery-empty">لا توجد صور منشورة بعد.</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===================== TOOLS ===================== -->
+      <!-- Python Execution -->
+      <section class="panel" data-panel="python-execution">
+        <div class="scroll-area">
+          <div class="page-head">
+            <h2>تنفيذ Python</h2>
+            <p class="muted">sandbox آمن: timeout 5s، لا شبكة، لا وصول لملفات النظام.</p>
+          </div>
+          <div class="editor-wrap">
+            <div class="editor-bar">
+              <span>main.py</span>
+              <span class="muted">Python 3 — sandbox</span>
+            </div>
+            <textarea id="pythonCode" rows="10" spellcheck="false" placeholder="print('Hello BardomPro!')&#10;import math&#10;print(math.pi)"></textarea>
+          </div>
+          <button id="pythonRun" class="primary-btn full">▶ تشغيل</button>
+          <div class="result-card out-card" id="pythonOutput">المخرجات ستظهر هنا...</div>
+        </div>
+      </section>
+
+      <!-- Container Python Execution -->
+      <section class="panel" data-panel="container-python">
+        <div class="scroll-area">
+          <div class="page-head">
+            <h2>حاوية Python</h2>
+            <p class="muted">حاوية معزولة مع مجلد عمل — يمكن رفع ملفات مساعدة.</p>
+          </div>
+          <div class="editor-wrap">
+            <div class="editor-bar">
+              <span>container/main.py</span>
+              <span class="muted">ephemeral workdir</span>
+            </div>
+            <textarea id="containerCode" rows="8" spellcheck="false" placeholder="# مثال&#10;with open('data.txt') as f:&#10;    print(f.read())"></textarea>
+          </div>
+          <div class="file-list" id="containerFiles"></div>
+          <div class="input-row">
+            <input type="text" id="contFileName" placeholder="اسم الملف (data.txt)">
+            <input type="text" id="contFileContent" placeholder="المحتوى">
+            <button id="contAddFile" class="ghost-btn">+ أضف</button>
+          </div>
+          <button id="containerRun" class="primary-btn full">▶ تشغيل الحاوية</button>
+          <div class="result-card out-card" id="containerOutput">المخرجات ستظهر هنا...</div>
+        </div>
+      </section>
+
+      <!-- Container File Search -->
+      <section class="panel" data-panel="file-search">
+        <div class="scroll-area">
+          <div class="page-head">
+            <h2>بحث الملفات</h2>
+            <p class="muted">يبحث في فهرس الملفات المرفوعة في الحاوية.</p>
+          </div>
+          <div class="input-row">
+            <input type="text" id="fsQuery" placeholder="جزء من اسم الملف...">
+            <button id="fsSearch" class="primary-btn">ابحث</button>
+          </div>
+          <div class="result-card" id="fsResult">النتائج ستظهر هنا...</div>
+        </div>
+      </section>
+
+      <!-- Browser Search -->
+      <section class="panel" data-panel="browser-search">
+        <div class="scroll-area">
+          <div class="page-head">
+            <h2>بحث ويب</h2>
+            <p class="muted">محرّك بحث ويب متكامل (مع نموذج احتياطي).</p>
+          </div>
+          <div class="input-row">
+            <input type="text" id="bsQuery" placeholder="ابحث عن...">
+            <button id="bsSearch" class="primary-btn">ابحث</button>
+          </div>
+          <div class="result-card" id="bsResult">النتائج ستظهر هنا...</div>
+        </div>
+      </section>
+
+      <!-- Internal Content Search -->
+      <section class="panel" data-panel="meta-search">
+        <div class="scroll-area">
+          <div class="page-head">
+            <h2>بحث المحتوى الداخلي</h2>
+            <p class="muted">بحث في محتوى الطرف الأول الداخلي عبر محرّك ذكي.</p>
+          </div>
+          <div class="input-row">
+            <input type="text" id="msQuery" placeholder="موضوع البحث...">
+            <button id="msSearch" class="primary-btn">ابحث</button>
+          </div>
+          <div class="result-card" id="msResult">النتائج ستظهر هنا...</div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <!-- ============== DEGRADED MODE BANNER ============== -->
+  <div class="degraded-banner" id="degradedBanner" hidden>
+    <div class="degraded-inner">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+        <line x1="12" y1="9" x2="12" y2="13"/>
+        <line x1="12" y1="17" x2="12.01" y2="17"/>
+      </svg>
+      <div class="degraded-text">
+        <strong>وضع محدود</strong>
+        <span id="degradedReason">الـ backend غير متاح — بعض القدرات معطّلة مؤقتاً.</span>
+      </div>
+      <button class="degraded-retry" id="retryConnBtn">↻ أعد المحاولة</button>
+    </div>
+  </div>
+
+  <!-- ============== TOAST ============== -->
+  <div id="toast" class="toast" hidden></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
