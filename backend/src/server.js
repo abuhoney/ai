@@ -887,3 +887,81 @@ writeZaiConfig().then(() => {
   console.error('Failed to init Z.AI config:', e);
   process.exit(1);
 });
+
+// Debug endpoint - check what's working
+app.get('/api/debug', async (req, res) => {
+  const results = {};
+  
+  // Test Z.AI direct
+  try {
+    const baseUrl = process.env.ZAI_BASE_URL || 'https://internal-api.z.ai/v1';
+    const r = await fetch(`${baseUrl}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${process.env.ZAI_API_KEY || 'Z.ai'}`,
+        'X-Z-AI-From': 'Z',
+        'X-Chat-Id': process.env.ZAI_CHAT_ID || '',
+        'X-User-Id': process.env.ZAI_USER_ID || '',
+        'X-Token': process.env.ZAI_TOKEN || ''
+      },
+      body: JSON.stringify({
+        messages: [{ role: 'user', content: 'hi' }],
+        thinking: { type: 'disabled' }
+      }),
+      signal: AbortSignal.timeout(15000)
+    });
+    results.zai = {
+      status: r.status,
+      ok: r.ok,
+      body: (await r.text()).substring(0, 300)
+    };
+  } catch (e) {
+    results.zai = { error: e.message };
+  }
+  
+  // Test Pollinations
+  try {
+    const r = await fetch('https://text.pollinations.ai/hello?referrer=bardompro.com', {
+      signal: AbortSignal.timeout(15000)
+    });
+    results.pollinations = {
+      status: r.status,
+      ok: r.ok,
+      body: (await r.text()).substring(0, 300)
+    };
+  } catch (e) {
+    results.pollinations = { error: e.message };
+  }
+  
+  // Test Google TTS
+  try {
+    const r = await fetch('https://translate.google.com/translate_tts?ie=UTF-8&q=hello&tl=en&client=tw-ob', {
+      headers: { 'User-Agent': 'Mozilla/5.0' },
+      signal: AbortSignal.timeout(15000)
+    });
+    results.googleTts = {
+      status: r.status,
+      ok: r.ok,
+      contentType: r.headers.get('content-type')
+    };
+  } catch (e) {
+    results.googleTts = { error: e.message };
+  }
+  
+  // Test image
+  try {
+    const r = await fetch('https://image.pollinations.ai/prompt/cat?width=256&height=256', {
+      signal: AbortSignal.timeout(15000)
+    });
+    results.image = {
+      status: r.status,
+      ok: r.ok,
+      contentType: r.headers.get('content-type')
+    };
+  } catch (e) {
+    results.image = { error: e.message };
+  }
+  
+  res.json({ ok: true, debug: results, time: new Date().toISOString() });
+});
